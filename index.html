@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="bg-slate-900">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,176 +10,234 @@
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
+<body class="bg-slate-900 text-slate-50 min-h-screen">
 
   <!-- ── AUTH SCREEN ─────────────────────────────────────── -->
-  <div id="auth-screen" class="auth-screen">
-    <div class="auth-card">
-      <div class="auth-logo">🥗</div>
-      <h1 class="auth-title">Calorie Tracker</h1>
-      <p class="auth-subtitle">Track your meals, hit your goals.</p>
+  <div id="auth-screen" class="fixed inset-0 bg-slate-900 flex items-center justify-center p-5 z-50">
+    <div class="w-full max-w-sm">
+      <div class="bg-slate-800 rounded-3xl border border-slate-700 p-8 shadow-2xl">
+        <div class="text-5xl text-center mb-3">🥗</div>
+        <h1 class="text-2xl font-bold text-center tracking-tight mb-1">Calorie Tracker</h1>
+        <p class="text-sm text-center text-slate-400 mb-7">Track your meals, hit your goals.</p>
 
-      <div class="auth-tabs">
-        <button class="auth-tab active" data-tab="login">Sign In</button>
-        <button class="auth-tab" data-tab="signup">Create Account</button>
+        <div class="flex bg-slate-900 rounded-xl p-1 mb-6 gap-1">
+          <button class="auth-tab flex-1 py-2 text-sm font-semibold rounded-lg transition-all bg-slate-700 text-white shadow" data-tab="login">Sign In</button>
+          <button class="auth-tab flex-1 py-2 text-sm font-medium rounded-lg transition-all text-slate-400" data-tab="signup">Create Account</button>
+        </div>
+
+        <form id="auth-form" novalidate class="space-y-4">
+          <div id="name-group" class="hidden">
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Name</label>
+            <input type="text" id="auth-name" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30 transition-all" placeholder="Your name" autocomplete="name" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Email</label>
+            <input type="email" id="auth-email" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30 transition-all" placeholder="you@example.com" autocomplete="email" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Password</label>
+            <div class="relative">
+              <input type="password" id="auth-password" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 pr-11 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30 transition-all" placeholder="••••••••" autocomplete="current-password" />
+              <button type="button" id="toggle-password" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-1"></button>
+            </div>
+          </div>
+          <p id="auth-error" class="text-sm text-rose-400 text-center min-h-[18px]"></p>
+          <button type="submit" id="btn-auth" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl py-3 text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed">Sign In</button>
+        </form>
       </div>
-
-      <form id="auth-form" novalidate>
-        <div class="form-group" id="name-group">
-          <label class="form-label">Name</label>
-          <input type="text" class="form-input" id="auth-name" placeholder="Your name" autocomplete="name" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Email</label>
-          <input type="email" class="form-input" id="auth-email" placeholder="you@example.com" autocomplete="email" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <input type="password" class="form-input" id="auth-password" placeholder="••••••••" autocomplete="current-password" />
-        </div>
-        <p class="auth-error" id="auth-error"></p>
-        <button type="submit" class="btn-auth" id="btn-auth">Sign In</button>
-      </form>
     </div>
   </div>
 
   <!-- ── MAIN APP ────────────────────────────────────────── -->
-  <div id="app" class="app-hidden">
+  <div id="app" class="hidden">
 
-    <header class="header">
-      <div class="header-inner">
-        <div class="header-left">
-          <span class="logo">Calorie Tracker</span>
-          <span class="greeting" id="greeting"></span>
+    <header class="sticky top-0 z-10 bg-slate-900/90 backdrop-blur-sm border-b border-slate-700/50">
+      <div class="max-w-2xl mx-auto px-5 h-14 flex items-center justify-between">
+        <div class="flex items-baseline gap-2">
+          <span class="font-bold text-white tracking-tight">Calorie Tracker</span>
+          <span id="greeting" class="text-xs text-slate-400 hidden sm:inline"></span>
         </div>
-        <div class="header-right">
-          <nav class="nav">
-            <button class="nav-btn active" data-view="today">Today</button>
-            <button class="nav-btn" data-view="week">Week</button>
-          </nav>
-          <button class="btn-logout" id="btn-logout" title="Sign out">Sign out</button>
-        </div>
+        <button id="btn-logout" class="text-xs text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-500/40 rounded-lg px-3 py-1.5 transition-all">Sign out</button>
       </div>
     </header>
 
     <!-- TODAY VIEW -->
-    <main id="view-today" class="view active">
-      <div class="container">
+    <main id="view-today">
+      <div class="max-w-2xl mx-auto px-5 pt-6 pb-32">
 
-        <div class="date-strip">
-          <button class="date-arrow" id="prev-day">&#8249;</button>
-          <span class="date-label" id="date-label"></span>
-          <button class="date-arrow" id="next-day">&#8250;</button>
+        <!-- Date strip -->
+        <div class="flex items-center justify-center gap-4 mb-7">
+          <button id="prev-day" class="w-9 h-9 flex items-center justify-center bg-slate-800 border border-slate-700 rounded-xl text-slate-400 hover:text-violet-400 hover:border-violet-500/50 transition-all text-xl">&#8249;</button>
+          <span id="date-label" class="font-semibold text-white w-36 text-center text-sm"></span>
+          <button id="next-day" class="w-9 h-9 flex items-center justify-center bg-slate-800 border border-slate-700 rounded-xl text-slate-400 hover:text-violet-400 hover:border-violet-500/50 transition-all text-xl">&#8250;</button>
         </div>
 
-        <div class="macro-grid">
-          <div class="macro-card macro-cal">
-            <div class="macro-value" id="total-cal">0</div>
-            <div class="macro-label">Calories</div>
+        <!-- Progress rings: Calories + Protein -->
+        <div class="flex items-center justify-center gap-12 mb-5">
+          <div class="flex flex-col items-center gap-2">
+            <div class="relative w-28 h-28">
+              <svg width="112" height="112" class="absolute inset-0 -rotate-90">
+                <circle cx="56" cy="56" r="46" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="9"/>
+                <circle id="ring-cal" cx="56" cy="56" r="46" fill="none" stroke="#38bdf8" stroke-width="9" stroke-linecap="round" stroke-dasharray="289.03" stroke-dashoffset="289.03" class="ring-progress"/>
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center">
+                <span id="total-cal" class="text-xl font-bold text-white leading-none">0</span>
+                <span class="text-xs text-slate-400 mt-0.5">kcal</span>
+              </div>
+            </div>
+            <span class="text-xs text-slate-500">/ 2000 goal</span>
           </div>
-          <div class="macro-card macro-protein">
-            <div class="macro-value" id="total-protein">0g</div>
-            <div class="macro-label">Protein</div>
-          </div>
-          <div class="macro-card macro-carbs">
-            <div class="macro-value" id="total-carbs">0g</div>
-            <div class="macro-label">Carbs</div>
-          </div>
-          <div class="macro-card macro-fat">
-            <div class="macro-value" id="total-fat">0g</div>
-            <div class="macro-label">Fat</div>
-          </div>
-          <div class="macro-card macro-fiber">
-            <div class="macro-value" id="total-fiber">0g</div>
-            <div class="macro-label">Fiber</div>
+
+          <div class="flex flex-col items-center gap-2">
+            <div class="relative w-28 h-28">
+              <svg width="112" height="112" class="absolute inset-0 -rotate-90">
+                <circle cx="56" cy="56" r="46" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="9"/>
+                <circle id="ring-protein" cx="56" cy="56" r="46" fill="none" stroke="#34d399" stroke-width="9" stroke-linecap="round" stroke-dasharray="289.03" stroke-dashoffset="289.03" class="ring-progress"/>
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center">
+                <span id="total-protein" class="text-xl font-bold text-white leading-none">0</span>
+                <span class="text-xs text-slate-400 mt-0.5">protein</span>
+              </div>
+            </div>
+            <span class="text-xs text-slate-500">/ 150g goal</span>
           </div>
         </div>
 
-        <div class="section-title" style="margin-bottom:14px">Today's Log</div>
-        <div id="log-container"></div>
+        <!-- Macro progress bars -->
+        <div class="bg-slate-800/60 rounded-2xl px-4 py-3.5 mb-7 space-y-2.5">
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-semibold text-amber-400 w-9 shrink-0">Carbs</span>
+            <div class="flex-1 bg-slate-700/80 rounded-full h-1.5 overflow-hidden">
+              <div id="bar-carbs" class="bg-amber-400 h-full rounded-full transition-all duration-700 ease-out" style="width:0%"></div>
+            </div>
+            <span id="val-carbs" class="text-xs text-slate-400 w-20 text-right shrink-0">0 / 200g</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-semibold text-rose-400 w-9 shrink-0">Fat</span>
+            <div class="flex-1 bg-slate-700/80 rounded-full h-1.5 overflow-hidden">
+              <div id="bar-fat" class="bg-rose-400 h-full rounded-full transition-all duration-700 ease-out" style="width:0%"></div>
+            </div>
+            <span id="val-fat" class="text-xs text-slate-400 w-20 text-right shrink-0">0 / 65g</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-semibold text-violet-400 w-9 shrink-0">Fiber</span>
+            <div class="flex-1 bg-slate-700/80 rounded-full h-1.5 overflow-hidden">
+              <div id="bar-fiber" class="bg-violet-400 h-full rounded-full transition-all duration-700 ease-out" style="width:0%"></div>
+            </div>
+            <span id="val-fiber" class="text-xs text-slate-400 w-20 text-right shrink-0">0 / 25g</span>
+          </div>
+        </div>
 
-        <div class="catalog-header">
-          <h2 class="section-title">Add Food</h2>
+        <!-- Log -->
+        <h2 class="text-sm font-semibold text-white mb-3">Today's Log</h2>
+        <div id="log-container" class="mb-2"></div>
+
+        <!-- Catalog -->
+        <div class="flex items-center justify-between mt-8 mb-3">
+          <h2 class="text-sm font-semibold text-white">Add Food</h2>
         </div>
-        <div class="catalog-search-wrap">
-          <input
-            type="text"
-            class="catalog-search"
-            id="food-search"
-            placeholder="&#128269; Search foods..."
-            autocomplete="off"
-          />
+        <div class="relative mb-4">
+          <input type="text" id="food-search" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 pl-10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30 transition-all" placeholder="Search foods..." autocomplete="off" />
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
         </div>
-        <div class="food-catalog" id="food-catalog"></div>
+        <div id="food-catalog" class="grid grid-cols-2 sm:grid-cols-3 gap-3"></div>
 
       </div>
     </main>
 
     <!-- WEEK VIEW -->
-    <main id="view-week" class="view">
-      <div class="container">
+    <main id="view-week" class="hidden">
+      <div class="max-w-2xl mx-auto px-5 pt-6 pb-32">
 
-        <div class="week-header">
-          <h2 class="section-title">Weekly Overview</h2>
-          <span class="week-range" id="week-range"></span>
+        <div class="flex items-baseline gap-3 mb-6">
+          <h2 class="text-base font-semibold text-white">Weekly Overview</h2>
+          <span id="week-range" class="text-xs text-slate-400"></span>
         </div>
 
-        <div class="chart-card">
-          <div class="chart-title">Daily Calories</div>
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-4">
+          <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Daily Calories</p>
           <div class="chart-wrap"><canvas id="chart-calories"></canvas></div>
         </div>
 
-        <div class="chart-card">
-          <div class="chart-title">Calories by Meal Type</div>
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-4">
+          <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Calories by Meal Type</p>
           <div class="chart-wrap"><canvas id="chart-meal-type"></canvas></div>
         </div>
 
-        <div class="chart-card">
-          <div class="chart-title">Macros Breakdown</div>
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-4">
+          <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Macros Breakdown</p>
           <div class="chart-wrap"><canvas id="chart-macros"></canvas></div>
         </div>
 
-        <div class="chart-card">
-          <div class="chart-title">Protein Trend</div>
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-4">
+          <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Protein Trend</p>
           <div class="chart-wrap"><canvas id="chart-protein"></canvas></div>
         </div>
 
       </div>
     </main>
 
+    <!-- Bottom Nav -->
+    <nav class="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-sm border-t border-slate-700/50">
+      <div class="flex max-w-2xl mx-auto">
+        <button data-view="today" class="nav-btn flex-1 py-3 flex flex-col items-center gap-1 transition-colors" style="color:#a78bfa">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+          </svg>
+          <span class="text-xs font-medium">Today</span>
+        </button>
+        <button data-view="week" class="nav-btn flex-1 py-3 flex flex-col items-center gap-1 transition-colors" style="color:#6b7280">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
+          </svg>
+          <span class="text-xs font-medium">Week</span>
+        </button>
+      </div>
+    </nav>
+
   </div>
 
-  <!-- ── QUANTITY + MEAL TYPE MODAL ─────────────────────── -->
-  <div class="modal-overlay" id="qty-overlay">
-    <div class="modal modal-sm">
-      <div class="modal-header">
-        <h3 class="modal-title" id="qty-item-name"></h3>
-        <button class="modal-close" id="close-qty">&#215;</button>
-      </div>
-      <div class="modal-body">
+  <!-- ── QTY MODAL ───────────────────────────────────────── -->
+  <div id="qty-overlay" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center">
+    <div class="bg-slate-800 border border-slate-700 rounded-t-3xl sm:rounded-2xl w-full max-w-lg shadow-2xl flex flex-col modal-slide-up">
 
-        <div class="meal-selector" id="meal-selector">
-          <button class="meal-btn" data-meal="breakfast">🌅<span>Breakfast</span></button>
-          <button class="meal-btn" data-meal="lunch">☀️<span>Lunch</span></button>
-          <button class="meal-btn" data-meal="dinner">🌙<span>Dinner</span></button>
+      <div class="flex items-center justify-between px-5 pt-5 shrink-0">
+        <h3 id="qty-item-name" class="font-bold text-white text-base"></h3>
+        <button id="close-qty" class="w-8 h-8 flex items-center justify-center bg-slate-700 hover:bg-rose-500/20 hover:text-rose-400 rounded-full text-slate-400 transition-all text-lg leading-none">×</button>
+      </div>
+
+      <div class="px-5 pb-6 pt-4 overflow-y-auto">
+        <!-- Meal selector -->
+        <div class="grid grid-cols-3 gap-2 mb-5">
+          <button class="meal-btn flex flex-col items-center gap-1 py-3 rounded-xl border-2 border-slate-700 text-slate-400 transition-all" data-meal="breakfast">
+            <span class="text-lg">🌅</span>
+            <span class="text-xs font-semibold uppercase tracking-wide">Breakfast</span>
+          </button>
+          <button class="meal-btn flex flex-col items-center gap-1 py-3 rounded-xl border-2 border-slate-700 text-slate-400 transition-all" data-meal="lunch">
+            <span class="text-lg">☀️</span>
+            <span class="text-xs font-semibold uppercase tracking-wide">Lunch</span>
+          </button>
+          <button class="meal-btn flex flex-col items-center gap-1 py-3 rounded-xl border-2 border-slate-700 text-slate-400 transition-all" data-meal="dinner">
+            <span class="text-lg">🌙</span>
+            <span class="text-xs font-semibold uppercase tracking-wide">Dinner</span>
+          </button>
         </div>
 
-        <div class="qty-info" id="qty-info"></div>
-        <div class="qty-row">
-          <input
-            type="number"
-            class="qty-input"
-            id="qty-input"
-            min="0.1"
-            step="0.1"
-            placeholder="0"
-          />
-          <span class="qty-unit" id="qty-unit"></span>
+        <div id="qty-info" class="bg-slate-900/60 rounded-xl px-4 py-3 text-sm text-slate-400 mb-4 leading-relaxed"></div>
+
+        <div class="flex items-center gap-3 mb-3">
+          <input type="number" id="qty-input" class="flex-1 bg-slate-900/60 border-2 border-slate-600 focus:border-violet-500 rounded-xl px-4 py-3 text-2xl font-bold text-white placeholder-slate-600 focus:outline-none transition-all" min="0.1" step="0.1" placeholder="0" />
+          <span id="qty-unit" class="text-base font-semibold text-slate-400 min-w-[36px]"></span>
         </div>
-        <div class="qty-preview" id="qty-preview"></div>
-        <button class="btn-confirm" id="confirm-add">Add to Log</button>
+
+        <p id="qty-preview" class="text-sm text-slate-400 italic min-h-[20px] mb-5"></p>
+        <button id="confirm-add" class="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl py-3.5 text-sm transition-all" disabled>Add to Log</button>
       </div>
+
     </div>
   </div>
 

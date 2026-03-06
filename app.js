@@ -39,6 +39,8 @@ const MEAL_TYPES = [
   { id: "dinner",    label: "Dinner",    icon: "🌙" },
 ];
 
+const GOALS = { cal: 2000, protein: 150, carbs: 200, fat: 65, fiber: 25 };
+
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 function dateKey(d) { return d.toISOString().slice(0, 10); }
 
@@ -93,8 +95,8 @@ function sumLog(log) {
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let state = {
-  user:         null,   // { id, email, name }
-  data:         {},     // local cache: { "YYYY-MM-DD": [entries] }
+  user:         null,
+  data:         {},
   currentDate:  new Date(),
   selectedFood: null,
   selectedMeal: defaultMealType(),
@@ -113,6 +115,7 @@ const authEmail    = $("auth-email");
 const authPassword = $("auth-password");
 const authError    = $("auth-error");
 const btnAuth      = $("btn-auth");
+const togglePwd    = $("toggle-password");
 
 const appEl        = $("app");
 const greeting     = $("greeting");
@@ -123,13 +126,6 @@ const views        = { today: $("view-today"), week: $("view-week") };
 const dateLabel    = $("date-label");
 const prevDayBtn   = $("prev-day");
 const nextDayBtn   = $("next-day");
-const totals       = {
-  cal:     $("total-cal"),
-  protein: $("total-protein"),
-  carbs:   $("total-carbs"),
-  fat:     $("total-fat"),
-  fiber:   $("total-fiber"),
-};
 const logContainer = $("log-container");
 const foodSearch   = $("food-search");
 const foodCatalog  = $("food-catalog");
@@ -151,21 +147,70 @@ let chartMealType = null;
 let chartMacros   = null;
 let chartProtein  = null;
 
+// ── PROGRESS RINGS & BARS ─────────────────────────────────────────────────────
+const CIRCUMFERENCE = 289.03; // 2 * π * 46
+
+function updateRing(id, value, goal) {
+  const el = $(id);
+  if (!el) return;
+  const pct = Math.min(value / goal, 1);
+  el.style.strokeDashoffset = CIRCUMFERENCE * (1 - pct);
+}
+
+function updateBar(barId, valId, value, goal, unit) {
+  const bar = $(barId);
+  const val = $(valId);
+  if (bar) bar.style.width = Math.min((value / goal) * 100, 100) + "%";
+  if (val) val.textContent = `${fmt(value)} / ${goal}${unit}`;
+}
+
+function setTotals(s) {
+  const calEl      = $("total-cal");
+  const proteinEl  = $("total-protein");
+  if (calEl)     calEl.textContent     = fmt(s.cal);
+  if (proteinEl) proteinEl.textContent = fmt(s.protein) + "g";
+
+  updateRing("ring-cal",     s.cal,     GOALS.cal);
+  updateRing("ring-protein", s.protein, GOALS.protein);
+  updateBar("bar-carbs", "val-carbs", s.carbs, GOALS.carbs, "g");
+  updateBar("bar-fat",   "val-fat",   s.fat,   GOALS.fat,   "g");
+  updateBar("bar-fiber", "val-fiber", s.fiber, GOALS.fiber, "g");
+}
+
+// ── PASSWORD TOGGLE ───────────────────────────────────────────────────────────
+const EYE_OPEN = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>`;
+const EYE_CLOSED = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88"/></svg>`;
+
+togglePwd.innerHTML = EYE_CLOSED;
+togglePwd.addEventListener("click", () => {
+  const isPassword = authPassword.type === "password";
+  authPassword.type = isPassword ? "text" : "password";
+  togglePwd.innerHTML = isPassword ? EYE_OPEN : EYE_CLOSED;
+});
+
 // ── AUTH UI ───────────────────────────────────────────────────────────────────
 let authMode = "login";
-nameGroup.classList.add("hidden");
 
-authTabs.forEach(tab => {
-  tab.addEventListener("click", () => {
-    authMode = tab.dataset.tab;
-    authTabs.forEach(t => t.classList.toggle("active", t === tab));
-    nameGroup.classList.toggle("hidden", authMode === "login");
-    btnAuth.textContent = authMode === "login" ? "Sign In" : "Create Account";
-    authError.textContent = "";
-    authForm.reset();
-    nameGroup.classList.toggle("hidden", authMode === "login");
+function setAuthTab(mode) {
+  authMode = mode;
+  authTabs.forEach(t => {
+    const isActive = t.dataset.tab === mode;
+    t.classList.toggle("bg-slate-700", isActive);
+    t.classList.toggle("text-white",   isActive);
+    t.classList.toggle("shadow",       isActive);
+    t.classList.toggle("font-semibold",isActive);
+    t.classList.toggle("text-slate-400", !isActive);
+    t.classList.toggle("font-medium",    !isActive);
   });
-});
+  nameGroup.classList.toggle("hidden", mode === "login");
+  btnAuth.textContent = mode === "login" ? "Sign In" : "Create Account";
+  authError.textContent = "";
+  authForm.reset();
+}
+
+authTabs.forEach(tab => tab.addEventListener("click", () => {
+  setAuthTab(tab.dataset.tab);
+}));
 
 authForm.addEventListener("submit", async e => {
   e.preventDefault();
@@ -181,12 +226,7 @@ authForm.addEventListener("submit", async e => {
     if (authMode === "signup") {
       if (!name) { authError.textContent = "Name is required."; return; }
       if (password.length < 6) { authError.textContent = "Password must be at least 6 characters."; return; }
-
-      const { error } = await db.auth.signUp({
-        email,
-        password,
-        options: { data: { name } },
-      });
+      const { error } = await db.auth.signUp({ email, password, options: { data: { name } } });
       if (error) { authError.textContent = error.message; return; }
     } else {
       const { error } = await db.auth.signInWithPassword({ email, password });
@@ -214,14 +254,14 @@ db.auth.onAuthStateChange((event, session) => {
   if (event === "SIGNED_OUT") {
     state.user = null;
     state.data = {};
-    appEl.classList.add("app-hidden");
+    appEl.classList.add("hidden");
     authScreen.classList.remove("hidden");
   }
 });
 
 function startApp() {
   authScreen.classList.add("hidden");
-  appEl.classList.remove("app-hidden");
+  appEl.classList.remove("hidden");
   state.data        = {};
   state.currentDate = new Date();
   greeting.textContent = `Hi, ${state.user.name}`;
@@ -232,16 +272,11 @@ function startApp() {
 btnLogout.addEventListener("click", async () => {
   await db.auth.signOut();
   authForm.reset();
-  authMode = "login";
-  nameGroup.classList.add("hidden");
-  btnAuth.textContent = "Sign In";
-  authTabs.forEach(t => t.classList.toggle("active", t.dataset.tab === "login"));
-  authError.textContent = "";
+  setAuthTab("login");
 });
 
 // ── SUPABASE DATA ─────────────────────────────────────────────────────────────
 async function fetchDayLog(dateStr) {
-  // Return from cache if available
   if (state.data[dateStr] !== undefined) return state.data[dateStr];
 
   const { data, error } = await db
@@ -300,11 +335,7 @@ async function insertEntry(food, qty, mealType, dateStr) {
 }
 
 async function deleteEntry(id, dateStr) {
-  const { error } = await db
-    .from("food_log")
-    .delete()
-    .eq("id", id);
-
+  const { error } = await db.from("food_log").delete().eq("id", id);
   if (error) throw error;
   state.data[dateStr] = state.data[dateStr].filter(e => e.id !== id);
 }
@@ -318,28 +349,16 @@ async function renderToday() {
   nextDayBtn.disabled = targetDate >= dateKey(today);
   nextDayBtn.style.opacity = nextDayBtn.disabled ? "0.35" : "";
 
-  // Show loading only on cache miss
   if (state.data[targetDate] === undefined) {
-    logContainer.innerHTML = `<div class="log-loading">Loading…</div>`;
+    logContainer.innerHTML = `<div class="text-center py-8 text-slate-500 text-sm">Loading…</div>`;
     setTotals({ cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 });
   }
 
   const log = await fetchDayLog(targetDate);
-
-  // Guard: user may have navigated to a different date while fetching
   if (dateKey(state.currentDate) !== targetDate) return;
 
-  const s = sumLog(log);
-  setTotals(s);
+  setTotals(sumLog(log));
   renderLogContainer(log, targetDate);
-}
-
-function setTotals(s) {
-  totals.cal.textContent     = fmt(s.cal);
-  totals.protein.textContent = fmt(s.protein) + "g";
-  totals.carbs.textContent   = fmt(s.carbs)   + "g";
-  totals.fat.textContent     = fmt(s.fat)      + "g";
-  totals.fiber.textContent   = fmt(s.fiber)   + "g";
 }
 
 function renderLogContainer(log, dateStr) {
@@ -347,9 +366,9 @@ function renderLogContainer(log, dateStr) {
 
   if (log.length === 0) {
     logContainer.innerHTML = `
-      <div class="log-empty">
-        <div class="log-empty-icon">🍽️</div>
-        <p>Nothing logged yet.<br/>Choose a food below to add it.</p>
+      <div class="text-center py-10">
+        <div class="text-4xl mb-3">🍽️</div>
+        <p class="text-sm text-slate-500">Nothing logged yet.<br/>Choose a food below to add it.</p>
       </div>`;
     return;
   }
@@ -360,54 +379,56 @@ function renderLogContainer(log, dateStr) {
 
     const mealCal = Math.round(entries.reduce((s, e) => s + e.cal, 0));
     const group   = document.createElement("div");
-    group.className   = "meal-group";
-    group.dataset.meal = meal.id;
+    group.className = "mb-5";
 
     const header = document.createElement("div");
-    header.className = "meal-group-header";
+    header.className = "flex items-center gap-2 mb-2 px-1";
     header.innerHTML = `
-      <span class="meal-group-icon">${meal.icon}</span>
-      <span class="meal-group-label">${meal.label}</span>
-      <span class="meal-group-cal">${mealCal} kcal</span>
+      <span class="text-base">${meal.icon}</span>
+      <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">${meal.label}</span>
+      <span class="ml-auto text-xs text-slate-500">${mealCal} kcal</span>
     `;
     group.appendChild(header);
 
     const list = document.createElement("div");
-    list.className = "log-list";
+    list.className = "space-y-2";
 
     entries.forEach(entry => {
       const item = document.createElement("div");
-      item.className = "log-item";
+      item.className = "log-item flex items-center gap-3 bg-slate-800 border border-slate-700/80 rounded-xl px-3 py-2.5";
       item.innerHTML = `
-        <div class="log-item-icon">${entry.icon || "🍽️"}</div>
-        <div class="log-item-info">
-          <div class="log-item-name">${entry.foodName}</div>
-          <div class="log-item-qty">${entry.qty} ${entry.metric}</div>
+        <span class="text-xl w-7 text-center shrink-0">${entry.icon || "🍽️"}</span>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium text-white truncate">${entry.foodName}</div>
+          <div class="text-xs text-slate-500 mt-0.5">${entry.qty} ${entry.metric}</div>
         </div>
-        <div class="log-item-macros">
-          <span class="log-macro-pill pill-cal">${fmt(entry.cal)} kcal</span>
-          <span class="log-macro-pill pill-p">${fmt(entry.protein)}g P</span>
-          <span class="log-macro-pill pill-c">${fmt(entry.carbs)}g C</span>
-          <span class="log-macro-pill pill-f">${fmt(entry.fat)}g F</span>
+        <div class="flex flex-wrap justify-end gap-1 shrink-0">
+          <span class="text-xs px-1.5 py-0.5 rounded-md bg-sky-500/15 text-sky-400">${fmt(entry.cal)} kcal</span>
+          <span class="text-xs px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400">${fmt(entry.protein)}g P</span>
+          <span class="text-xs px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400">${fmt(entry.carbs)}g C</span>
+          <span class="text-xs px-1.5 py-0.5 rounded-md bg-rose-500/15 text-rose-400">${fmt(entry.fat)}g F</span>
         </div>
-        <button class="log-item-delete" data-id="${entry.id}" title="Remove">&#10005;</button>
+        <button class="log-delete ml-1 shrink-0 w-6 h-6 flex items-center justify-center text-slate-600 hover:text-rose-400 transition-colors rounded-md text-sm" data-id="${entry.id}" title="Remove">&#10005;</button>
       `;
-      list.appendChild(item);
-    });
 
-    list.querySelectorAll(".log-item-delete").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const id = btn.dataset.id;
-        btn.disabled = true;
-        try {
-          await deleteEntry(id, dateStr);
-          renderLogContainer(state.data[dateStr], dateStr);
-          setTotals(sumLog(state.data[dateStr]));
-        } catch (err) {
-          console.error(err);
-          btn.disabled = false;
-        }
+      item.querySelector(".log-delete").addEventListener("click", async btn => {
+        const id = btn.currentTarget.dataset.id;
+        btn.currentTarget.disabled = true;
+        item.classList.add("removing");
+        setTimeout(async () => {
+          try {
+            await deleteEntry(id, dateStr);
+            renderLogContainer(state.data[dateStr], dateStr);
+            setTotals(sumLog(state.data[dateStr]));
+          } catch (err) {
+            console.error(err);
+            item.classList.remove("removing");
+            btn.currentTarget.disabled = false;
+          }
+        }, 220);
       });
+
+      list.appendChild(item);
     });
 
     group.appendChild(list);
@@ -422,21 +443,23 @@ function renderFoodCatalog(query = "") {
   foodCatalog.innerHTML = "";
 
   if (filtered.length === 0) {
-    foodCatalog.innerHTML = `<div class="catalog-no-results">No items found for "<strong>${query}</strong>"</div>`;
+    foodCatalog.innerHTML = `
+      <div class="col-span-2 sm:col-span-3 text-center py-6 text-sm text-slate-500">
+        No items found for "<strong class="text-slate-300">${query}</strong>"
+      </div>`;
     return;
   }
 
   filtered.forEach(food => {
-    const card    = document.createElement("div");
-    card.className = "catalog-card";
+    const card     = document.createElement("div");
+    card.className = "relative bg-slate-800 border border-slate-700 rounded-xl p-3 cursor-pointer hover:border-violet-500/60 hover:bg-slate-700/70 transition-all active:scale-95 select-none";
     const calPer   = food.metric === "unit" ? food.cal : food.cal * 100;
     const perLabel = food.metric === "unit" ? "/unit"  : `/100${food.metric}`;
     card.innerHTML = `
-      <span class="catalog-metric">${food.metric}</span>
-      <div class="catalog-icon">${food.icon}</div>
-      <div class="catalog-name">${food.name}</div>
-      <div class="catalog-cal">${Math.round(calPer * 10) / 10} kcal ${perLabel}</div>
-      <button class="catalog-add" title="Add to log">+</button>
+      <span class="absolute top-2 right-2 text-[10px] font-semibold text-slate-500 bg-slate-700/80 rounded-md px-1.5 py-0.5">${food.metric}</span>
+      <div class="text-2xl mb-1.5">${food.icon}</div>
+      <div class="text-xs font-semibold text-white leading-tight mb-1 pr-8">${food.name}</div>
+      <div class="text-xs text-slate-400">${Math.round(calPer * 10) / 10} kcal ${perLabel}</div>
     `;
     card.addEventListener("click", () => openQtyModal(food));
     foodCatalog.appendChild(card);
@@ -458,27 +481,32 @@ function openQtyModal(food) {
   const label  = food.metric === "unit" ? "per unit"  : `per 100${food.metric}`;
 
   qtyInfo.innerHTML = `
-    <strong>${Math.round(calPer * 10) / 10} kcal</strong> ${label} &nbsp;|&nbsp;
-    P: ${Math.round(pPer * 10) / 10}g &nbsp;
-    C: ${Math.round(cPer * 10) / 10}g &nbsp;
-    F: ${Math.round(fPer * 10) / 10}g
+    <strong class="text-white">${Math.round(calPer * 10) / 10} kcal</strong> ${label}
+    &nbsp;|&nbsp; P: ${Math.round(pPer * 10) / 10}g
+    &nbsp; C: ${Math.round(cPer * 10) / 10}g
+    &nbsp; F: ${Math.round(fPer * 10) / 10}g
   `;
 
   qtyInput.value = "";
   qtyPreview.textContent = "";
   confirmAdd.disabled = true;
-  qtyOverlay.classList.add("open");
+  qtyOverlay.classList.remove("hidden");
   setTimeout(() => qtyInput.focus(), 200);
 }
 
 function closeQtyModal() {
-  qtyOverlay.classList.remove("open");
+  qtyOverlay.classList.add("hidden");
   state.selectedFood = null;
 }
 
 function setActiveMeal(mealId) {
   state.selectedMeal = mealId;
-  mealBtns.forEach(b => b.classList.toggle("active", b.dataset.meal === mealId));
+  mealBtns.forEach(b => {
+    const isActive = b.dataset.meal === mealId;
+    b.style.borderColor = isActive ? "#8b5cf6" : "";
+    b.style.color       = isActive ? "#c4b5fd" : "";
+    b.style.background  = isActive ? "rgba(139,92,246,0.12)" : "";
+  });
 }
 
 mealBtns.forEach(btn => btn.addEventListener("click", () => setActiveMeal(btn.dataset.meal)));
@@ -528,6 +556,20 @@ confirmAdd.addEventListener("click", async () => {
 closeQtyBtn.addEventListener("click", closeQtyModal);
 qtyOverlay.addEventListener("click", e => { if (e.target === qtyOverlay) closeQtyModal(); });
 
+// ── VIEW SWITCHING ────────────────────────────────────────────────────────────
+function switchView(v) {
+  state.view = v;
+  Object.entries(views).forEach(([key, el]) => {
+    el.classList.toggle("hidden", key !== v);
+  });
+  navBtns.forEach(btn => {
+    btn.style.color = btn.dataset.view === v ? "#a78bfa" : "#6b7280";
+  });
+  if (v === "week") renderWeek();
+}
+
+navBtns.forEach(btn => btn.addEventListener("click", () => switchView(btn.dataset.view)));
+
 // ── RENDER: WEEK ──────────────────────────────────────────────────────────────
 function getWeekDates() {
   const today = new Date();
@@ -550,7 +592,6 @@ async function renderWeek() {
     days[6].toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 
   const weekData = await fetchWeekLogs(startDate, endDate);
-  // Merge into local cache
   days.forEach(d => {
     const k = dateKey(d);
     if (weekData[k]) state.data[k] = weekData[k];
@@ -572,22 +613,28 @@ async function renderWeek() {
     ))
   );
 
+  const gridColor   = "rgba(255,255,255,0.04)";
+  const tickColor   = "#6b7280";
+  const legendColor = "#94a3b8";
+
   const baseOpts = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: "#111827",
+        backgroundColor: "#1e293b",
         titleFont: { family: "Inter", size: 12 },
         bodyFont:  { family: "Inter", size: 12 },
         padding: 10,
         cornerRadius: 8,
+        borderColor: "rgba(255,255,255,0.08)",
+        borderWidth: 1,
       },
     },
     scales: {
-      x: { grid: { display: false }, ticks: { font: { family: "Inter", size: 11 }, color: "#6b7280" } },
-      y: { grid: { color: "#f1f3f5" }, ticks: { font: { family: "Inter", size: 11 }, color: "#6b7280" }, beginAtZero: true },
+      x: { grid: { display: false }, ticks: { font: { family: "Inter", size: 11 }, color: tickColor } },
+      y: { grid: { color: gridColor }, ticks: { font: { family: "Inter", size: 11 }, color: tickColor }, beginAtZero: true },
     },
   };
 
@@ -596,7 +643,7 @@ async function renderWeek() {
     type: "bar",
     data: {
       labels,
-      datasets: [{ label: "Calories", data: calData, backgroundColor: "rgba(14,165,233,0.75)", borderColor: "#0ea5e9", borderWidth: 2, borderRadius: 8, borderSkipped: false }],
+      datasets: [{ label: "Calories", data: calData, backgroundColor: "rgba(56,189,248,0.7)", borderColor: "#38bdf8", borderWidth: 2, borderRadius: 6, borderSkipped: false }],
     },
     options: { ...baseOpts, plugins: { ...baseOpts.plugins, tooltip: { ...baseOpts.plugins.tooltip, callbacks: { label: ctx => ` ${ctx.parsed.y} kcal` } } } },
   });
@@ -607,16 +654,16 @@ async function renderWeek() {
     data: {
       labels,
       datasets: [
-        { label: "Breakfast", data: mealCalData[0], backgroundColor: "rgba(245,158,11,0.85)", stack: "m" },
-        { label: "Lunch",     data: mealCalData[1], backgroundColor: "rgba(14,165,233,0.85)",  stack: "m" },
-        { label: "Dinner",    data: mealCalData[2], backgroundColor: "rgba(139,92,246,0.85)", stack: "m" },
+        { label: "Breakfast", data: mealCalData[0], backgroundColor: "rgba(245,158,11,0.8)",  stack: "m", borderRadius: 4 },
+        { label: "Lunch",     data: mealCalData[1], backgroundColor: "rgba(56,189,248,0.8)",  stack: "m", borderRadius: 4 },
+        { label: "Dinner",    data: mealCalData[2], backgroundColor: "rgba(139,92,246,0.8)",  stack: "m", borderRadius: 4 },
       ],
     },
     options: {
       ...baseOpts,
       plugins: {
         ...baseOpts.plugins,
-        legend: { display: true, position: "bottom", labels: { font: { family: "Inter", size: 11 }, color: "#6b7280", boxWidth: 12, padding: 12 } },
+        legend: { display: true, position: "bottom", labels: { font: { family: "Inter", size: 11 }, color: legendColor, boxWidth: 12, padding: 12 } },
         tooltip: { ...baseOpts.plugins.tooltip, callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y} kcal` } },
       },
       scales: { x: { ...baseOpts.scales.x, stacked: true }, y: { ...baseOpts.scales.y, stacked: true } },
@@ -629,17 +676,17 @@ async function renderWeek() {
     data: {
       labels,
       datasets: [
-        { label: "Protein", data: proteinData, backgroundColor: "rgba(16,185,129,0.85)",  stack: "m" },
-        { label: "Carbs",   data: carbsData,   backgroundColor: "rgba(245,158,11,0.85)",  stack: "m" },
-        { label: "Fat",     data: fatData,     backgroundColor: "rgba(239,68,68,0.85)",   stack: "m" },
-        { label: "Fiber",   data: fiberData,   backgroundColor: "rgba(139,92,246,0.85)",  stack: "m" },
+        { label: "Protein", data: proteinData, backgroundColor: "rgba(52,211,153,0.8)",  stack: "m", borderRadius: 4 },
+        { label: "Carbs",   data: carbsData,   backgroundColor: "rgba(245,158,11,0.8)",  stack: "m", borderRadius: 4 },
+        { label: "Fat",     data: fatData,     backgroundColor: "rgba(251,113,133,0.8)", stack: "m", borderRadius: 4 },
+        { label: "Fiber",   data: fiberData,   backgroundColor: "rgba(167,139,250,0.8)", stack: "m", borderRadius: 4 },
       ],
     },
     options: {
       ...baseOpts,
       plugins: {
         ...baseOpts.plugins,
-        legend: { display: true, position: "bottom", labels: { font: { family: "Inter", size: 11 }, color: "#6b7280", boxWidth: 12, padding: 12 } },
+        legend: { display: true, position: "bottom", labels: { font: { family: "Inter", size: 11 }, color: legendColor, boxWidth: 12, padding: 12 } },
         tooltip: { ...baseOpts.plugins.tooltip, callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y}g` } },
       },
       scales: { x: { ...baseOpts.scales.x, stacked: true }, y: { ...baseOpts.scales.y, stacked: true } },
@@ -651,24 +698,13 @@ async function renderWeek() {
     type: "line",
     data: {
       labels,
-      datasets: [{ label: "Protein (g)", data: proteinData, borderColor: "#10b981", backgroundColor: "rgba(16,185,129,0.1)", borderWidth: 2.5, pointBackgroundColor: "#10b981", pointRadius: 5, pointHoverRadius: 7, fill: true, tension: 0.35 }],
+      datasets: [{ label: "Protein (g)", data: proteinData, borderColor: "#34d399", backgroundColor: "rgba(52,211,153,0.08)", borderWidth: 2.5, pointBackgroundColor: "#34d399", pointRadius: 5, pointHoverRadius: 7, fill: true, tension: 0.35 }],
     },
     options: { ...baseOpts, plugins: { ...baseOpts.plugins, tooltip: { ...baseOpts.plugins.tooltip, callbacks: { label: ctx => ` ${ctx.parsed.y}g protein` } } } },
   });
 }
 
-// ── VIEW SWITCHING ────────────────────────────────────────────────────────────
-function switchView(v) {
-  state.view = v;
-  Object.values(views).forEach(el => el.classList.remove("active"));
-  views[v].classList.add("active");
-  navBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.view === v));
-  if (v === "week") renderWeek();
-}
-
-// ── EVENTS ────────────────────────────────────────────────────────────────────
-navBtns.forEach(btn => btn.addEventListener("click", () => switchView(btn.dataset.view)));
-
+// ── DATE NAV ──────────────────────────────────────────────────────────────────
 prevDayBtn.addEventListener("click", () => {
   state.currentDate.setDate(state.currentDate.getDate() - 1);
   renderToday();
@@ -684,6 +720,8 @@ nextDayBtn.addEventListener("click", () => {
 foodSearch.addEventListener("input", () => renderFoodCatalog(foodSearch.value));
 
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && qtyOverlay.classList.contains("open")) closeQtyModal();
-  if (e.key === "Enter"  && qtyOverlay.classList.contains("open") && !confirmAdd.disabled) confirmAdd.click();
+  if (!qtyOverlay.classList.contains("hidden")) {
+    if (e.key === "Escape") closeQtyModal();
+    if (e.key === "Enter" && !confirmAdd.disabled) confirmAdd.click();
+  }
 });

@@ -74,7 +74,7 @@ function mapRow(row) {
     protein:  row.protein,
     carbs:    row.carbs,
     fat:      row.fat,
-    fiber:    row.fiber,
+    fiber:    row.fibre,
   };
 }
 
@@ -290,7 +290,7 @@ async function insertEntry(food, qty, mealType, dateStr) {
       protein:   Math.round(food.protein * qty * 10) / 10,
       carbs:     Math.round(food.carbs   * qty * 10) / 10,
       fat:       Math.round(food.fat     * qty * 10) / 10,
-      fiber:     Math.round(food.fiber   * qty * 10) / 10,
+      fibre:     Math.round(food.fiber   * qty * 10) / 10,
     })
     .select()
     .single();

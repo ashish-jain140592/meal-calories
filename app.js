@@ -1,3 +1,8 @@
+// ── SUPABASE ──────────────────────────────────────────────────────────────────
+const SUPABASE_URL = "https://vnxwxipqzvpedtkxxyvb.supabase.co";
+const SUPABASE_KEY = "sb_publishable__fuv5f1PmBl2oFIEf37i7g_sK47WBCV";
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 // ── FOOD DATA ─────────────────────────────────────────────────────────────────
 const FOODS = [
   { name: "Milk",                      icon: "🥛", metric: "ml",   cal: 0.500,  protein: 0.0360, carbs: 0.0550, fat: 0.0150, fiber: 0.000 },
@@ -56,19 +61,20 @@ function defaultMealType() {
   return "dinner";
 }
 
-function calcEntry(food, qty, mealType) {
+// Convert Supabase row → UI entry object
+function mapRow(row) {
   return {
-    id: Date.now() + Math.random(),
-    foodName: food.name,
-    icon: food.icon,
-    metric: food.metric,
-    mealType,
-    qty,
-    cal:     Math.round(food.cal     * qty * 10) / 10,
-    protein: Math.round(food.protein * qty * 10) / 10,
-    carbs:   Math.round(food.carbs   * qty * 10) / 10,
-    fat:     Math.round(food.fat     * qty * 10) / 10,
-    fiber:   Math.round(food.fiber   * qty * 10) / 10,
+    id:       row.id,
+    foodName: row.food_name,
+    icon:     row.icon,
+    metric:   row.metric,
+    mealType: row.meal_type,
+    qty:      row.quantity,
+    cal:      row.calories,
+    protein:  row.protein,
+    carbs:    row.carbs,
+    fat:      row.fat,
+    fiber:    row.fiber,
   };
 }
 
@@ -85,73 +91,19 @@ function sumLog(log) {
   );
 }
 
-// ── AUTH ──────────────────────────────────────────────────────────────────────
-async function hashPassword(pw) {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(pw));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-function getUsers() {
-  try { return JSON.parse(localStorage.getItem("ct_users") || "{}"); } catch { return {}; }
-}
-
-function saveUsers(u) { localStorage.setItem("ct_users", JSON.stringify(u)); }
-
-function getSession() {
-  try { return JSON.parse(localStorage.getItem("ct_session") || "null"); } catch { return null; }
-}
-
-function saveSession(s) { localStorage.setItem("ct_session", JSON.stringify(s)); }
-function clearSession()  { localStorage.removeItem("ct_session"); }
-
-async function register(name, email, password) {
-  if (!name.trim()) return "Name is required.";
-  if (!email.includes("@")) return "Enter a valid email.";
-  if (password.length < 6) return "Password must be at least 6 characters.";
-  const users = getUsers();
-  if (users[email.toLowerCase()]) return "An account with this email already exists.";
-  const hash = await hashPassword(password);
-  users[email.toLowerCase()] = { name: name.trim(), passwordHash: hash };
-  saveUsers(users);
-  return null;
-}
-
-async function login(email, password) {
-  const users = getUsers();
-  const user = users[email.toLowerCase()];
-  if (!user) return "No account found with this email.";
-  const hash = await hashPassword(password);
-  if (hash !== user.passwordHash) return "Incorrect password.";
-  return null;
-}
-
-// ── STORAGE (per-user) ────────────────────────────────────────────────────────
-function storageKey(email) { return `mealLog_${email.toLowerCase()}`; }
-
-function loadData(email) {
-  try { return JSON.parse(localStorage.getItem(storageKey(email)) || "{}"); } catch { return {}; }
-}
-
-function saveData(email, data) {
-  localStorage.setItem(storageKey(email), JSON.stringify(data));
-}
-
-function getLog(data, key) { return data[key] || []; }
-
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let state = {
-  session: null,           // { email, name }
-  data: {},
-  currentDate: new Date(),
+  user:         null,   // { id, email, name }
+  data:         {},     // local cache: { "YYYY-MM-DD": [entries] }
+  currentDate:  new Date(),
   selectedFood: null,
   selectedMeal: defaultMealType(),
-  view: "today",
+  view:         "today",
 };
 
 // ── DOM REFS ──────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 
-// Auth
 const authScreen   = $("auth-screen");
 const authForm     = $("auth-form");
 const authTabs     = document.querySelectorAll(".auth-tab");
@@ -162,14 +114,12 @@ const authPassword = $("auth-password");
 const authError    = $("auth-error");
 const btnAuth      = $("btn-auth");
 
-// App
 const appEl        = $("app");
 const greeting     = $("greeting");
 const btnLogout    = $("btn-logout");
 const navBtns      = document.querySelectorAll(".nav-btn");
 const views        = { today: $("view-today"), week: $("view-week") };
 
-// Today
 const dateLabel    = $("date-label");
 const prevDayBtn   = $("prev-day");
 const nextDayBtn   = $("next-day");
@@ -180,11 +130,10 @@ const totals       = {
   fat:     $("total-fat"),
   fiber:   $("total-fiber"),
 };
-const logContainer  = $("log-container");
-const foodSearch    = $("food-search");
-const foodCatalog   = $("food-catalog");
+const logContainer = $("log-container");
+const foodSearch   = $("food-search");
+const foodCatalog  = $("food-catalog");
 
-// Qty modal
 const qtyOverlay   = $("qty-overlay");
 const closeQtyBtn  = $("close-qty");
 const qtyItemName  = $("qty-item-name");
@@ -195,7 +144,6 @@ const qtyPreview   = $("qty-preview");
 const confirmAdd   = $("confirm-add");
 const mealBtns     = document.querySelectorAll(".meal-btn");
 
-// Week
 const weekRange    = $("week-range");
 
 let chartCalories = null;
@@ -204,7 +152,8 @@ let chartMacros   = null;
 let chartProtein  = null;
 
 // ── AUTH UI ───────────────────────────────────────────────────────────────────
-let authMode = "login"; // "login" | "signup"
+let authMode = "login";
+nameGroup.classList.add("hidden");
 
 authTabs.forEach(tab => {
   tab.addEventListener("click", () => {
@@ -214,11 +163,9 @@ authTabs.forEach(tab => {
     btnAuth.textContent = authMode === "login" ? "Sign In" : "Create Account";
     authError.textContent = "";
     authForm.reset();
+    nameGroup.classList.toggle("hidden", authMode === "login");
   });
 });
-
-// Start with name field hidden (login mode)
-nameGroup.classList.add("hidden");
 
 authForm.addEventListener("submit", async e => {
   e.preventDefault();
@@ -232,70 +179,170 @@ authForm.addEventListener("submit", async e => {
 
   try {
     if (authMode === "signup") {
-      const err = await register(name, email, password);
-      if (err) { authError.textContent = err; return; }
+      if (!name) { authError.textContent = "Name is required."; return; }
+      if (password.length < 6) { authError.textContent = "Password must be at least 6 characters."; return; }
+
+      const { error } = await db.auth.signUp({
+        email,
+        password,
+        options: { data: { name } },
+      });
+      if (error) { authError.textContent = error.message; return; }
+    } else {
+      const { error } = await db.auth.signInWithPassword({ email, password });
+      if (error) { authError.textContent = error.message; return; }
     }
-
-    const err = await login(email, password);
-    if (err) { authError.textContent = err; return; }
-
-    const users = getUsers();
-    const user  = users[email.toLowerCase()];
-    state.session = { email: email.toLowerCase(), name: user.name };
-    saveSession(state.session);
-    startApp();
+    // onAuthStateChange will call startApp()
   } finally {
     btnAuth.disabled = false;
     btnAuth.textContent = authMode === "login" ? "Sign In" : "Create Account";
   }
 });
 
+// ── SESSION MANAGEMENT ────────────────────────────────────────────────────────
+db.auth.onAuthStateChange((event, session) => {
+  if (session?.user && !state.user) {
+    const user = session.user;
+    state.user = {
+      id:    user.id,
+      email: user.email,
+      name:  user.user_metadata?.name || user.email.split("@")[0],
+    };
+    startApp();
+  }
+
+  if (event === "SIGNED_OUT") {
+    state.user = null;
+    state.data = {};
+    appEl.classList.add("app-hidden");
+    authScreen.classList.remove("hidden");
+  }
+});
+
 function startApp() {
   authScreen.classList.add("hidden");
   appEl.classList.remove("app-hidden");
-
-  state.data        = loadData(state.session.email);
+  state.data        = {};
   state.currentDate = new Date();
-
-  greeting.textContent = `Hi, ${state.session.name}`;
+  greeting.textContent = `Hi, ${state.user.name}`;
   renderToday();
   renderFoodCatalog();
 }
 
-btnLogout.addEventListener("click", () => {
-  clearSession();
-  state.session = null;
-  state.data    = {};
-  appEl.classList.add("app-hidden");
-  authScreen.classList.remove("hidden");
+btnLogout.addEventListener("click", async () => {
+  await db.auth.signOut();
   authForm.reset();
   authMode = "login";
   nameGroup.classList.add("hidden");
   btnAuth.textContent = "Sign In";
   authTabs.forEach(t => t.classList.toggle("active", t.dataset.tab === "login"));
+  authError.textContent = "";
 });
 
+// ── SUPABASE DATA ─────────────────────────────────────────────────────────────
+async function fetchDayLog(dateStr) {
+  // Return from cache if available
+  if (state.data[dateStr] !== undefined) return state.data[dateStr];
+
+  const { data, error } = await db
+    .from("food_log")
+    .select("*")
+    .eq("user_id", state.user.id)
+    .eq("date", dateStr)
+    .order("created_at", { ascending: true });
+
+  if (error) { console.error(error); return []; }
+  state.data[dateStr] = (data || []).map(mapRow);
+  return state.data[dateStr];
+}
+
+async function fetchWeekLogs(startDate, endDate) {
+  const { data, error } = await db
+    .from("food_log")
+    .select("*")
+    .eq("user_id", state.user.id)
+    .gte("date", startDate)
+    .lte("date", endDate)
+    .order("created_at", { ascending: true });
+
+  if (error) { console.error(error); return {}; }
+
+  const grouped = {};
+  (data || []).forEach(row => {
+    if (!grouped[row.date]) grouped[row.date] = [];
+    grouped[row.date].push(mapRow(row));
+  });
+  return grouped;
+}
+
+async function insertEntry(food, qty, mealType, dateStr) {
+  const { data, error } = await db
+    .from("food_log")
+    .insert({
+      user_id:   state.user.id,
+      date:      dateStr,
+      food_name: food.name,
+      icon:      food.icon,
+      metric:    food.metric,
+      meal_type: mealType,
+      quantity:  qty,
+      calories:  Math.round(food.cal     * qty * 10) / 10,
+      protein:   Math.round(food.protein * qty * 10) / 10,
+      carbs:     Math.round(food.carbs   * qty * 10) / 10,
+      fat:       Math.round(food.fat     * qty * 10) / 10,
+      fiber:     Math.round(food.fiber   * qty * 10) / 10,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapRow(data);
+}
+
+async function deleteEntry(id, dateStr) {
+  const { error } = await db
+    .from("food_log")
+    .delete()
+    .eq("id", id);
+
+  if (error) throw error;
+  state.data[dateStr] = state.data[dateStr].filter(e => e.id !== id);
+}
+
 // ── RENDER: TODAY ─────────────────────────────────────────────────────────────
-function renderToday() {
-  const key = dateKey(state.currentDate);
-  const log = getLog(state.data, key);
+async function renderToday() {
+  const targetDate = dateKey(state.currentDate);
 
   dateLabel.textContent = fmtDate(state.currentDate);
   const today = new Date();
-  nextDayBtn.disabled = dateKey(state.currentDate) >= dateKey(today);
+  nextDayBtn.disabled = targetDate >= dateKey(today);
   nextDayBtn.style.opacity = nextDayBtn.disabled ? "0.35" : "";
 
+  // Show loading only on cache miss
+  if (state.data[targetDate] === undefined) {
+    logContainer.innerHTML = `<div class="log-loading">Loading…</div>`;
+    setTotals({ cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 });
+  }
+
+  const log = await fetchDayLog(targetDate);
+
+  // Guard: user may have navigated to a different date while fetching
+  if (dateKey(state.currentDate) !== targetDate) return;
+
   const s = sumLog(log);
+  setTotals(s);
+  renderLogContainer(log, targetDate);
+}
+
+function setTotals(s) {
   totals.cal.textContent     = fmt(s.cal);
   totals.protein.textContent = fmt(s.protein) + "g";
   totals.carbs.textContent   = fmt(s.carbs)   + "g";
   totals.fat.textContent     = fmt(s.fat)      + "g";
   totals.fiber.textContent   = fmt(s.fiber)   + "g";
-
-  renderLogContainer(log, key);
 }
 
-function renderLogContainer(log, key) {
+function renderLogContainer(log, dateStr) {
   logContainer.innerHTML = "";
 
   if (log.length === 0) {
@@ -303,8 +350,7 @@ function renderLogContainer(log, key) {
       <div class="log-empty">
         <div class="log-empty-icon">🍽️</div>
         <p>Nothing logged yet.<br/>Choose a food below to add it.</p>
-      </div>
-    `;
+      </div>`;
     return;
   }
 
@@ -313,8 +359,8 @@ function renderLogContainer(log, key) {
     if (entries.length === 0) return;
 
     const mealCal = Math.round(entries.reduce((s, e) => s + e.cal, 0));
-    const group = document.createElement("div");
-    group.className = "meal-group";
+    const group   = document.createElement("div");
+    group.className   = "meal-group";
     group.dataset.meal = meal.id;
 
     const header = document.createElement("div");
@@ -350,10 +396,17 @@ function renderLogContainer(log, key) {
     });
 
     list.querySelectorAll(".log-item-delete").forEach(btn => {
-      btn.addEventListener("click", () => {
-        state.data[key] = state.data[key].filter(e => e.id !== parseFloat(btn.dataset.id));
-        saveData(state.session.email, state.data);
-        renderToday();
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        btn.disabled = true;
+        try {
+          await deleteEntry(id, dateStr);
+          renderLogContainer(state.data[dateStr], dateStr);
+          setTotals(sumLog(state.data[dateStr]));
+        } catch (err) {
+          console.error(err);
+          btn.disabled = false;
+        }
       });
     });
 
@@ -366,7 +419,6 @@ function renderLogContainer(log, key) {
 function renderFoodCatalog(query = "") {
   const q = query.trim().toLowerCase();
   const filtered = q ? FOODS.filter(f => f.name.toLowerCase().includes(q)) : FOODS;
-
   foodCatalog.innerHTML = "";
 
   if (filtered.length === 0) {
@@ -375,11 +427,10 @@ function renderFoodCatalog(query = "") {
   }
 
   filtered.forEach(food => {
-    const card = document.createElement("div");
+    const card    = document.createElement("div");
     card.className = "catalog-card";
     const calPer   = food.metric === "unit" ? food.cal : food.cal * 100;
     const perLabel = food.metric === "unit" ? "/unit"  : `/100${food.metric}`;
-
     card.innerHTML = `
       <span class="catalog-metric">${food.metric}</span>
       <div class="catalog-icon">${food.icon}</div>
@@ -387,7 +438,6 @@ function renderFoodCatalog(query = "") {
       <div class="catalog-cal">${Math.round(calPer * 10) / 10} kcal ${perLabel}</div>
       <button class="catalog-add" title="Add to log">+</button>
     `;
-
     card.addEventListener("click", () => openQtyModal(food));
     foodCatalog.appendChild(card);
   });
@@ -431,9 +481,52 @@ function setActiveMeal(mealId) {
   mealBtns.forEach(b => b.classList.toggle("active", b.dataset.meal === mealId));
 }
 
-mealBtns.forEach(btn => {
-  btn.addEventListener("click", () => setActiveMeal(btn.dataset.meal));
+mealBtns.forEach(btn => btn.addEventListener("click", () => setActiveMeal(btn.dataset.meal)));
+
+qtyInput.addEventListener("input", () => {
+  const qty  = parseFloat(qtyInput.value);
+  const food = state.selectedFood;
+  if (!food || !qty || qty <= 0) {
+    qtyPreview.textContent = "";
+    confirmAdd.disabled = true;
+    return;
+  }
+  const cal     = Math.round(food.cal     * qty * 10) / 10;
+  const protein = Math.round(food.protein * qty * 10) / 10;
+  const carbs   = Math.round(food.carbs   * qty * 10) / 10;
+  const fat     = Math.round(food.fat     * qty * 10) / 10;
+  qtyPreview.textContent =
+    `${fmt(cal)} kcal  ·  P ${fmt(protein)}g  ·  C ${fmt(carbs)}g  ·  F ${fmt(fat)}g`;
+  confirmAdd.disabled = false;
 });
+
+confirmAdd.addEventListener("click", async () => {
+  const qty  = parseFloat(qtyInput.value);
+  const food = state.selectedFood;
+  if (!food || !qty || qty <= 0) return;
+
+  confirmAdd.disabled = true;
+  confirmAdd.textContent = "Saving…";
+
+  const dateStr = dateKey(state.currentDate);
+  try {
+    const entry = await insertEntry(food, qty, state.selectedMeal, dateStr);
+    if (!state.data[dateStr]) state.data[dateStr] = [];
+    state.data[dateStr].push(entry);
+    closeQtyModal();
+    renderLogContainer(state.data[dateStr], dateStr);
+    setTotals(sumLog(state.data[dateStr]));
+  } catch (err) {
+    console.error(err);
+    qtyPreview.textContent = "Failed to save. Please try again.";
+  } finally {
+    confirmAdd.disabled = false;
+    confirmAdd.textContent = "Add to Log";
+  }
+});
+
+closeQtyBtn.addEventListener("click", closeQtyModal);
+qtyOverlay.addEventListener("click", e => { if (e.target === qtyOverlay) closeQtyModal(); });
 
 // ── RENDER: WEEK ──────────────────────────────────────────────────────────────
 function getWeekDates() {
@@ -445,18 +538,26 @@ function getWeekDates() {
   });
 }
 
-function renderWeek() {
-  const days  = getWeekDates();
-  const labels = days.map(d =>
-    d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric" })
-  );
+async function renderWeek() {
+  const days      = getWeekDates();
+  const labels    = days.map(d => d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric" }));
+  const startDate = dateKey(days[0]);
+  const endDate   = dateKey(days[6]);
 
   weekRange.textContent =
     days[0].toLocaleDateString("en-IN", { day: "numeric", month: "short" }) +
     " – " +
     days[6].toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 
-  const logs = days.map(d => getLog(state.data, dateKey(d)));
+  const weekData = await fetchWeekLogs(startDate, endDate);
+  // Merge into local cache
+  days.forEach(d => {
+    const k = dateKey(d);
+    if (weekData[k]) state.data[k] = weekData[k];
+    else if (!state.data[k]) state.data[k] = [];
+  });
+
+  const logs = days.map(d => state.data[dateKey(d)] || []);
   const sums = logs.map(sumLog);
 
   const calData     = sums.map(s => Math.round(s.cal));
@@ -465,12 +566,10 @@ function renderWeek() {
   const fatData     = sums.map(s => Math.round(s.fat     * 10) / 10);
   const fiberData   = sums.map(s => Math.round(s.fiber   * 10) / 10);
 
-  // Meal-type breakdown per day
   const mealCalData = MEAL_TYPES.map(meal =>
-    logs.map(log => {
-      const entries = log.filter(e => (e.mealType || "lunch") === meal.id);
-      return Math.round(entries.reduce((s, e) => s + e.cal, 0));
-    })
+    logs.map(log => Math.round(
+      log.filter(e => (e.mealType || "lunch") === meal.id).reduce((s, e) => s + e.cal, 0)
+    ))
   );
 
   const baseOpts = {
@@ -487,74 +586,43 @@ function renderWeek() {
       },
     },
     scales: {
-      x: {
-        grid: { display: false },
-        ticks: { font: { family: "Inter", size: 11 }, color: "#6b7280" },
-      },
-      y: {
-        grid: { color: "#f1f3f5" },
-        ticks: { font: { family: "Inter", size: 11 }, color: "#6b7280" },
-        beginAtZero: true,
-      },
+      x: { grid: { display: false }, ticks: { font: { family: "Inter", size: 11 }, color: "#6b7280" } },
+      y: { grid: { color: "#f1f3f5" }, ticks: { font: { family: "Inter", size: 11 }, color: "#6b7280" }, beginAtZero: true },
     },
   };
 
-  // 1. Daily calories bar
   if (chartCalories) chartCalories.destroy();
   chartCalories = new Chart($("chart-calories"), {
     type: "bar",
     data: {
       labels,
-      datasets: [{
-        label: "Calories",
-        data: calData,
-        backgroundColor: "rgba(14,165,233,0.75)",
-        borderColor: "#0ea5e9",
-        borderWidth: 2,
-        borderRadius: 8,
-        borderSkipped: false,
-      }],
+      datasets: [{ label: "Calories", data: calData, backgroundColor: "rgba(14,165,233,0.75)", borderColor: "#0ea5e9", borderWidth: 2, borderRadius: 8, borderSkipped: false }],
     },
-    options: {
-      ...baseOpts,
-      plugins: {
-        ...baseOpts.plugins,
-        tooltip: { ...baseOpts.plugins.tooltip, callbacks: { label: ctx => ` ${ctx.parsed.y} kcal` } },
-      },
-    },
+    options: { ...baseOpts, plugins: { ...baseOpts.plugins, tooltip: { ...baseOpts.plugins.tooltip, callbacks: { label: ctx => ` ${ctx.parsed.y} kcal` } } } },
   });
 
-  // 2. Calories by meal type stacked
   if (chartMealType) chartMealType.destroy();
   chartMealType = new Chart($("chart-meal-type"), {
     type: "bar",
     data: {
       labels,
       datasets: [
-        { label: "Breakfast", data: mealCalData[0], backgroundColor: "rgba(245,158,11,0.85)",  stack: "m" },
+        { label: "Breakfast", data: mealCalData[0], backgroundColor: "rgba(245,158,11,0.85)", stack: "m" },
         { label: "Lunch",     data: mealCalData[1], backgroundColor: "rgba(14,165,233,0.85)",  stack: "m" },
-        { label: "Dinner",    data: mealCalData[2], backgroundColor: "rgba(139,92,246,0.85)",  stack: "m" },
+        { label: "Dinner",    data: mealCalData[2], backgroundColor: "rgba(139,92,246,0.85)", stack: "m" },
       ],
     },
     options: {
       ...baseOpts,
       plugins: {
         ...baseOpts.plugins,
-        legend: {
-          display: true,
-          position: "bottom",
-          labels: { font: { family: "Inter", size: 11 }, color: "#6b7280", boxWidth: 12, padding: 12 },
-        },
+        legend: { display: true, position: "bottom", labels: { font: { family: "Inter", size: 11 }, color: "#6b7280", boxWidth: 12, padding: 12 } },
         tooltip: { ...baseOpts.plugins.tooltip, callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y} kcal` } },
       },
-      scales: {
-        x: { ...baseOpts.scales.x, stacked: true },
-        y: { ...baseOpts.scales.y, stacked: true },
-      },
+      scales: { x: { ...baseOpts.scales.x, stacked: true }, y: { ...baseOpts.scales.y, stacked: true } },
     },
   });
 
-  // 3. Macros stacked
   if (chartMacros) chartMacros.destroy();
   chartMacros = new Chart($("chart-macros"), {
     type: "bar",
@@ -571,46 +639,21 @@ function renderWeek() {
       ...baseOpts,
       plugins: {
         ...baseOpts.plugins,
-        legend: {
-          display: true,
-          position: "bottom",
-          labels: { font: { family: "Inter", size: 11 }, color: "#6b7280", boxWidth: 12, padding: 12 },
-        },
+        legend: { display: true, position: "bottom", labels: { font: { family: "Inter", size: 11 }, color: "#6b7280", boxWidth: 12, padding: 12 } },
         tooltip: { ...baseOpts.plugins.tooltip, callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y}g` } },
       },
-      scales: {
-        x: { ...baseOpts.scales.x, stacked: true },
-        y: { ...baseOpts.scales.y, stacked: true },
-      },
+      scales: { x: { ...baseOpts.scales.x, stacked: true }, y: { ...baseOpts.scales.y, stacked: true } },
     },
   });
 
-  // 4. Protein trend line
   if (chartProtein) chartProtein.destroy();
   chartProtein = new Chart($("chart-protein"), {
     type: "line",
     data: {
       labels,
-      datasets: [{
-        label: "Protein (g)",
-        data: proteinData,
-        borderColor: "#10b981",
-        backgroundColor: "rgba(16,185,129,0.1)",
-        borderWidth: 2.5,
-        pointBackgroundColor: "#10b981",
-        pointRadius: 5,
-        pointHoverRadius: 7,
-        fill: true,
-        tension: 0.35,
-      }],
+      datasets: [{ label: "Protein (g)", data: proteinData, borderColor: "#10b981", backgroundColor: "rgba(16,185,129,0.1)", borderWidth: 2.5, pointBackgroundColor: "#10b981", pointRadius: 5, pointHoverRadius: 7, fill: true, tension: 0.35 }],
     },
-    options: {
-      ...baseOpts,
-      plugins: {
-        ...baseOpts.plugins,
-        tooltip: { ...baseOpts.plugins.tooltip, callbacks: { label: ctx => ` ${ctx.parsed.y}g protein` } },
-      },
-    },
+    options: { ...baseOpts, plugins: { ...baseOpts.plugins, tooltip: { ...baseOpts.plugins.tooltip, callbacks: { label: ctx => ` ${ctx.parsed.y}g protein` } } } },
   });
 }
 
@@ -639,46 +682,8 @@ nextDayBtn.addEventListener("click", () => {
 });
 
 foodSearch.addEventListener("input", () => renderFoodCatalog(foodSearch.value));
-closeQtyBtn.addEventListener("click", closeQtyModal);
-qtyOverlay.addEventListener("click", e => { if (e.target === qtyOverlay) closeQtyModal(); });
-
-qtyInput.addEventListener("input", () => {
-  const qty  = parseFloat(qtyInput.value);
-  const food = state.selectedFood;
-  if (!food || !qty || qty <= 0) {
-    qtyPreview.textContent = "";
-    confirmAdd.disabled = true;
-    return;
-  }
-  const e = calcEntry(food, qty, state.selectedMeal);
-  qtyPreview.textContent =
-    `${fmt(e.cal)} kcal  ·  P ${fmt(e.protein)}g  ·  C ${fmt(e.carbs)}g  ·  F ${fmt(e.fat)}g`;
-  confirmAdd.disabled = false;
-});
-
-confirmAdd.addEventListener("click", () => {
-  const qty  = parseFloat(qtyInput.value);
-  const food = state.selectedFood;
-  if (!food || !qty || qty <= 0) return;
-
-  const entry = calcEntry(food, qty, state.selectedMeal);
-  const key   = dateKey(state.currentDate);
-  if (!state.data[key]) state.data[key] = [];
-  state.data[key].push(entry);
-  saveData(state.session.email, state.data);
-
-  closeQtyModal();
-  renderToday();
-});
 
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && qtyOverlay.classList.contains("open")) closeQtyModal();
   if (e.key === "Enter"  && qtyOverlay.classList.contains("open") && !confirmAdd.disabled) confirmAdd.click();
 });
-
-// ── INIT ──────────────────────────────────────────────────────────────────────
-const existingSession = getSession();
-if (existingSession) {
-  state.session = existingSession;
-  startApp();
-}

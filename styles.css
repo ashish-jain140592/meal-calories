@@ -382,6 +382,13 @@ body {
   margin-bottom: 8px;
 }
 
+.log-loading {
+  text-align: center;
+  padding: 36px 20px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
 .log-empty {
   text-align: center;
   padding: 36px 20px;

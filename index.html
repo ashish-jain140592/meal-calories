@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calorie Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ── AUTH SCREEN ─────────────────────────────────────── -->
+  <div id="auth-screen" class="auth-screen">
+    <div class="auth-card">
+      <div class="auth-logo">🥗</div>
+      <h1 class="auth-title">Calorie Tracker</h1>
+      <p class="auth-subtitle">Track your meals, hit your goals.</p>
+
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-tab="login">Sign In</button>
+        <button class="auth-tab" data-tab="signup">Create Account</button>
+      </div>
+
+      <form id="auth-form" novalidate>
+        <div class="form-group" id="name-group">
+          <label class="form-label">Name</label>
+          <input type="text" class="form-input" id="auth-name" placeholder="Your name" autocomplete="name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input type="email" class="form-input" id="auth-email" placeholder="you@example.com" autocomplete="email" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" class="form-input" id="auth-password" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <p class="auth-error" id="auth-error"></p>
+        <button type="submit" class="btn-auth" id="btn-auth">Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── MAIN APP ────────────────────────────────────────── -->
+  <div id="app" class="app-hidden">
+
+    <header class="header">
+      <div class="header-inner">
+        <div class="header-left">
+          <span class="logo">Calorie Tracker</span>
+          <span class="greeting" id="greeting"></span>
+        </div>
+        <div class="header-right">
+          <nav class="nav">
+            <button class="nav-btn active" data-view="today">Today</button>
+            <button class="nav-btn" data-view="week">Week</button>
+          </nav>
+          <button class="btn-logout" id="btn-logout" title="Sign out">Sign out</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- TODAY VIEW -->
+    <main id="view-today" class="view active">
+      <div class="container">
+
+        <div class="date-strip">
+          <button class="date-arrow" id="prev-day">&#8249;</button>
+          <span class="date-label" id="date-label"></span>
+          <button class="date-arrow" id="next-day">&#8250;</button>
+        </div>
+
+        <div class="macro-grid">
+          <div class="macro-card macro-cal">
+            <div class="macro-value" id="total-cal">0</div>
+            <div class="macro-label">Calories</div>
+          </div>
+          <div class="macro-card macro-protein">
+            <div class="macro-value" id="total-protein">0g</div>
+            <div class="macro-label">Protein</div>
+          </div>
+          <div class="macro-card macro-carbs">
+            <div class="macro-value" id="total-carbs">0g</div>
+            <div class="macro-label">Carbs</div>
+          </div>
+          <div class="macro-card macro-fat">
+            <div class="macro-value" id="total-fat">0g</div>
+            <div class="macro-label">Fat</div>
+          </div>
+          <div class="macro-card macro-fiber">
+            <div class="macro-value" id="total-fiber">0g</div>
+            <div class="macro-label">Fiber</div>
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-bottom:14px">Today's Log</div>
+        <div id="log-container"></div>
+
+        <div class="catalog-header">
+          <h2 class="section-title">Add Food</h2>
+        </div>
+        <div class="catalog-search-wrap">
+          <input
+            type="text"
+            class="catalog-search"
+            id="food-search"
+            placeholder="&#128269; Search foods..."
+            autocomplete="off"
+          />
+        </div>
+        <div class="food-catalog" id="food-catalog"></div>
+
+      </div>
+    </main>
+
+    <!-- WEEK VIEW -->
+    <main id="view-week" class="view">
+      <div class="container">
+
+        <div class="week-header">
+          <h2 class="section-title">Weekly Overview</h2>
+          <span class="week-range" id="week-range"></span>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-title">Daily Calories</div>
+          <div class="chart-wrap"><canvas id="chart-calories"></canvas></div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-title">Calories by Meal Type</div>
+          <div class="chart-wrap"><canvas id="chart-meal-type"></canvas></div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-title">Macros Breakdown</div>
+          <div class="chart-wrap"><canvas id="chart-macros"></canvas></div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-title">Protein Trend</div>
+          <div class="chart-wrap"><canvas id="chart-protein"></canvas></div>
+        </div>
+
+      </div>
+    </main>
+
+  </div>
+
+  <!-- ── QUANTITY + MEAL TYPE MODAL ─────────────────────── -->
+  <div class="modal-overlay" id="qty-overlay">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3 class="modal-title" id="qty-item-name"></h3>
+        <button class="modal-close" id="close-qty">&#215;</button>
+      </div>
+      <div class="modal-body">
+
+        <div class="meal-selector" id="meal-selector">
+          <button class="meal-btn" data-meal="breakfast">🌅<span>Breakfast</span></button>
+          <button class="meal-btn" data-meal="lunch">☀️<span>Lunch</span></button>
+          <button class="meal-btn" data-meal="dinner">🌙<span>Dinner</span></button>
+        </div>
+
+        <div class="qty-info" id="qty-info"></div>
+        <div class="qty-row">
+          <input
+            type="number"
+            class="qty-input"
+            id="qty-input"
+            min="0.1"
+            step="0.1"
+            placeholder="0"
+          />
+          <span class="qty-unit" id="qty-unit"></span>
+        </div>
+        <div class="qty-preview" id="qty-preview"></div>
+        <button class="btn-confirm" id="confirm-add">Add to Log</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

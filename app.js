@@ -130,6 +130,21 @@ const logContainer = $("log-container");
 const foodSearch   = $("food-search");
 const foodCatalog  = $("food-catalog");
 
+const newFoodOverlay  = $("new-food-overlay");
+const closeNewFoodBtn = $("close-new-food");
+const nfName          = $("nf-name");
+const nfIcon          = $("nf-icon");
+const nfMetric        = $("nf-metric");
+const nfCal           = $("nf-cal");
+const nfProtein       = $("nf-protein");
+const nfCarbs         = $("nf-carbs");
+const nfFat           = $("nf-fat");
+const nfFiber         = $("nf-fiber");
+const nfError         = $("nf-error");
+const nfSubmit        = $("nf-submit");
+const nfUnitHint      = $("nf-unit-hint");
+const btnNewFood      = $("btn-new-food");
+
 const qtyOverlay   = $("qty-overlay");
 const closeQtyBtn  = $("close-qty");
 const qtyItemName  = $("qty-item-name");
@@ -259,12 +274,13 @@ db.auth.onAuthStateChange((event, session) => {
   }
 });
 
-function startApp() {
+async function startApp() {
   authScreen.classList.add("hidden");
   appEl.classList.remove("hidden");
   state.data        = {};
   state.currentDate = new Date();
   greeting.textContent = `Hi, ${state.user.name}`;
+  await loadCustomFoods();
   renderToday();
   renderFoodCatalog();
 }
@@ -332,6 +348,31 @@ async function insertEntry(food, qty, mealType, dateStr) {
 
   if (error) throw error;
   return mapRow(data);
+}
+
+async function loadCustomFoods() {
+  const { data, error } = await db
+    .from("custom_foods")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (error) { console.error("Failed to load custom foods:", error); return; }
+
+  (data || []).forEach(row => {
+    const exists = FOODS.some(f => f.name.toLowerCase() === row.name.toLowerCase());
+    if (!exists) {
+      FOODS.push({
+        name:    row.name,
+        icon:    row.icon,
+        metric:  row.metric,
+        cal:     parseFloat(row.cal),
+        protein: parseFloat(row.protein),
+        carbs:   parseFloat(row.carbs),
+        fat:     parseFloat(row.fat),
+        fiber:   parseFloat(row.fiber),
+      });
+    }
+  });
 }
 
 async function deleteEntry(id, dateStr) {
@@ -556,6 +597,99 @@ confirmAdd.addEventListener("click", async () => {
 closeQtyBtn.addEventListener("click", closeQtyModal);
 qtyOverlay.addEventListener("click", e => { if (e.target === qtyOverlay) closeQtyModal(); });
 
+// ── NEW FOOD MODAL ────────────────────────────────────────────────────────────
+function openNewFoodModal() {
+  nfName.value    = "";
+  nfIcon.value    = "";
+  nfMetric.value  = "";
+  nfCal.value     = "";
+  nfProtein.value = "";
+  nfCarbs.value   = "";
+  nfFat.value     = "";
+  nfFiber.value   = "";
+  nfError.textContent  = "";
+  nfUnitHint.textContent = "";
+  newFoodOverlay.classList.remove("hidden");
+  setTimeout(() => nfName.focus(), 200);
+}
+
+function closeNewFoodModal() {
+  newFoodOverlay.classList.add("hidden");
+}
+
+nfMetric.addEventListener("change", () => {
+  const labels = { g: "— per 1g", ml: "— per 1ml", unit: "— per 1 unit" };
+  nfUnitHint.textContent = labels[nfMetric.value] || "";
+});
+
+btnNewFood.addEventListener("click", openNewFoodModal);
+closeNewFoodBtn.addEventListener("click", closeNewFoodModal);
+newFoodOverlay.addEventListener("click", e => { if (e.target === newFoodOverlay) closeNewFoodModal(); });
+
+nfSubmit.addEventListener("click", async () => {
+  nfError.textContent = "";
+
+  const name    = nfName.value.trim();
+  const icon    = nfIcon.value.trim() || "🍽️";
+  const metric  = nfMetric.value;
+  const cal     = parseFloat(nfCal.value);
+  const protein = parseFloat(nfProtein.value) || 0;
+  const carbs   = parseFloat(nfCarbs.value)   || 0;
+  const fat     = parseFloat(nfFat.value)     || 0;
+  const fiber   = parseFloat(nfFiber.value)   || 0;
+
+  // ── Validation ──────────────────────────────────────────
+  if (!name) {
+    nfError.textContent = "Food name is required."; return;
+  }
+  if (!metric) {
+    nfError.textContent = "Please select a measurement unit."; return;
+  }
+  if (isNaN(cal) || cal <= 0 || cal > 2000) {
+    nfError.textContent = "Calories must be between 0 and 2000."; return;
+  }
+  if (protein < 0 || carbs < 0 || fat < 0 || fiber < 0) {
+    nfError.textContent = "Macro values cannot be negative."; return;
+  }
+  const duplicate = FOODS.find(f => f.name.toLowerCase() === name.toLowerCase());
+  if (duplicate) {
+    nfError.textContent = `"${duplicate.name}" already exists in the food list.`; return;
+  }
+
+  // ── Submit ───────────────────────────────────────────────
+  nfSubmit.disabled = true;
+  nfSubmit.textContent = "Saving…";
+
+  try {
+    const { error } = await db
+      .from("custom_foods")
+      .insert({
+        submitted_by: state.user.id,
+        name, icon, metric, cal, protein, carbs, fat,
+        fiber: fiber,
+      });
+
+    if (error) {
+      if (error.code === "23505") {
+        nfError.textContent = `"${name}" already exists in the food list.`;
+      } else {
+        nfError.textContent = "Failed to save. Please try again.";
+        console.error(error);
+      }
+      return;
+    }
+
+    // Merge into local FOODS array immediately
+    FOODS.push({ name, icon, metric, cal, protein, carbs, fat, fiber });
+    closeNewFoodModal();
+    renderFoodCatalog(foodSearch.value);
+
+  } finally {
+    nfSubmit.disabled = false;
+    nfSubmit.textContent = "Submit Food";
+  }
+});
+
 // ── VIEW SWITCHING ────────────────────────────────────────────────────────────
 function switchView(v) {
   state.view = v;
@@ -720,8 +854,11 @@ nextDayBtn.addEventListener("click", () => {
 foodSearch.addEventListener("input", () => renderFoodCatalog(foodSearch.value));
 
 document.addEventListener("keydown", e => {
-  if (!qtyOverlay.classList.contains("hidden")) {
-    if (e.key === "Escape") closeQtyModal();
-    if (e.key === "Enter" && !confirmAdd.disabled) confirmAdd.click();
+  if (e.key === "Escape") {
+    if (!qtyOverlay.classList.contains("hidden")) closeQtyModal();
+    if (!newFoodOverlay.classList.contains("hidden")) closeNewFoodModal();
+  }
+  if (e.key === "Enter" && !qtyOverlay.classList.contains("hidden") && !confirmAdd.disabled) {
+    confirmAdd.click();
   }
 });

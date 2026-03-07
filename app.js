@@ -102,6 +102,7 @@ let state = {
   selectedMeal: defaultMealType(),
   view:         "today",
   goals:        { ...GOAL_DEFAULTS },
+  toastsFired:  {},   // { "YYYY-MM-DD": Set{...} }
 };
 
 // ── DOM REFS ──────────────────────────────────────────────────────────────────
@@ -179,7 +180,14 @@ function updateRing(id, value, goal) {
   const el = $(id);
   if (!el) return;
   const pct = Math.min(value / goal, 1);
+  const wasComplete = parseFloat(el.style.strokeDashoffset || CIRCUMFERENCE) <= 0.5;
   el.style.strokeDashoffset = CIRCUMFERENCE * (1 - pct);
+  if (pct >= 1 && !wasComplete) {
+    el.classList.remove("ring-pulse");
+    void el.offsetWidth; // force reflow to restart animation
+    el.classList.add("ring-pulse");
+    setTimeout(() => el.classList.remove("ring-pulse"), 1200);
+  }
 }
 
 function updateBar(barId, valId, value, goal, unit) {
@@ -200,6 +208,125 @@ function setTotals(s) {
   updateBar("bar-carbs", "val-carbs", s.carbs, state.goals.carbs, "g");
   updateBar("bar-fat",   "val-fat",   s.fat,   state.goals.fat,   "g");
   updateBar("bar-fiber", "val-fiber", s.fiber, state.goals.fiber, "g");
+  renderAchievements(s);
+}
+
+// ── ACHIEVEMENTS ──────────────────────────────────────────────────────────────
+function computeAchievements(s) {
+  return [
+    { key: "cal",     label: "Cal",     unit: "kcal", logged: s.cal,     goal: state.goals.cal,     under: true  },
+    { key: "protein", label: "Protein", unit: "g",    logged: s.protein, goal: state.goals.protein, under: false },
+    { key: "carbs",   label: "Carbs",   unit: "g",    logged: s.carbs,   goal: state.goals.carbs,   under: true  },
+    { key: "fat",     label: "Fat",     unit: "g",    logged: s.fat,     goal: state.goals.fat,     under: true  },
+    { key: "fiber",   label: "Fiber",   unit: "g",    logged: s.fiber,   goal: state.goals.fiber,   under: false },
+  ].map(a => ({ ...a, met: a.under ? a.logged <= a.goal : a.logged >= a.goal }));
+}
+
+function renderAchievements(s) {
+  const banner = $("achievement-banner");
+  if (!banner) return;
+
+  // Hide if nothing logged yet
+  if (s.cal === 0) { banner.classList.add("hidden"); return; }
+
+  const achievements = computeAchievements(s);
+  const allMet       = achievements.every(a => a.met);
+  const dateStr      = dateKey(state.currentDate);
+  const isToday      = dateStr === dateKey(new Date());
+
+  banner.classList.remove("hidden");
+
+  if (allMet) {
+    banner.innerHTML = `
+      <div class="bg-gradient-to-r from-violet-500/20 via-emerald-500/15 to-sky-500/20 border border-violet-400/30 rounded-2xl px-5 py-5 text-center">
+        <div class="text-3xl mb-2">🏆</div>
+        <p class="shimmer-text text-base font-bold mb-0.5">All Goals Achieved!</p>
+        <p class="text-xs text-slate-400">You crushed it today — every goal met</p>
+      </div>`;
+
+    if (isToday) {
+      const fired = state.toastsFired[dateStr] || new Set();
+      if (!fired.has("confetti")) {
+        fired.add("confetti");
+        state.toastsFired[dateStr] = fired;
+        fireConfetti();
+        showToast("🏆 All goals achieved! Amazing work!");
+      }
+    }
+    return;
+  }
+
+  const ICONS = { met: "✅", over: "⚠️", under: "🔵" };
+  const badgesHtml = achievements.map((a, i) => {
+    const icon  = a.met ? ICONS.met : (a.under && a.logged > a.goal ? ICONS.over : ICONS.under);
+    const style = a.met
+      ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-400"
+      : (a.under && a.logged > a.goal
+          ? "bg-rose-500/10 border-rose-500/25 text-rose-400"
+          : "bg-slate-800 border-slate-700 text-slate-400");
+    const delay = `animation-delay:${i * 55}ms`;
+    return `
+      <div class="badge-pop flex flex-col items-center gap-1 ${style} border rounded-xl py-2.5 px-1" style="${delay}">
+        <span class="text-sm leading-none">${icon}</span>
+        <span class="text-[11px] font-semibold">${a.label}</span>
+        <span class="text-[10px] text-slate-500">${Math.round(a.logged)}/${a.goal}</span>
+      </div>`;
+  }).join("");
+
+  banner.innerHTML = `
+    <div class="bg-slate-800/60 rounded-2xl px-4 py-3.5">
+      <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Today's Progress</p>
+      <div class="grid grid-cols-5 gap-2">${badgesHtml}</div>
+    </div>`;
+
+  // Toasts for newly-met "reach" goals (protein, fiber) — today only
+  if (isToday) {
+    const fired = state.toastsFired[dateStr] || new Set();
+    achievements.filter(a => !a.under && a.met && !fired.has(a.key)).forEach(a => {
+      fired.add(a.key);
+      showToast(`✅ ${a.label} goal reached!`);
+    });
+    // Toast for cal going over
+    const cal = achievements.find(a => a.key === "cal");
+    if (cal && !cal.met && !fired.has("cal-over")) {
+      fired.add("cal-over");
+      showToast(`⚠️ Calorie goal exceeded`);
+    }
+    state.toastsFired[dateStr] = fired;
+  }
+}
+
+function showToast(message) {
+  const container = $("toast-container");
+  if (!container) return;
+  const toast = document.createElement("div");
+  toast.className = "toast bg-slate-800 border border-slate-600/80 text-white text-sm font-medium px-5 py-3 rounded-2xl shadow-2xl";
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add("removing");
+    setTimeout(() => toast.remove(), 250);
+  }, 3000);
+}
+
+function fireConfetti() {
+  const colors = ["#a78bfa", "#34d399", "#38bdf8", "#fb923c", "#f472b6", "#facc15", "#e879f9"];
+  for (let i = 0; i < 70; i++) {
+    const el = document.createElement("div");
+    el.className = "confetti-piece";
+    el.style.cssText = `
+      left:${Math.random() * 100}vw;
+      background:${colors[Math.floor(Math.random() * colors.length)]};
+      width:${5 + Math.random() * 7}px;
+      height:${8 + Math.random() * 8}px;
+      animation-duration:${2.2 + Math.random() * 1.8}s;
+      animation-delay:${Math.random() * 0.6}s;
+      transform:rotate(${Math.random() * 360}deg);
+      border-radius:${Math.random() > 0.5 ? "50%" : "2px"};
+    `;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 4500);
+  }
 }
 
 // ── PASSWORD TOGGLE ───────────────────────────────────────────────────────────
@@ -277,9 +404,10 @@ db.auth.onAuthStateChange((event, session) => {
   }
 
   if (event === "SIGNED_OUT") {
-    state.user  = null;
-    state.data  = {};
-    state.goals = { ...GOAL_DEFAULTS };
+    state.user        = null;
+    state.data        = {};
+    state.goals       = { ...GOAL_DEFAULTS };
+    state.toastsFired = {};
     appEl.classList.add("hidden");
     onboardingScreen.classList.add("hidden");
     authScreen.classList.remove("hidden");

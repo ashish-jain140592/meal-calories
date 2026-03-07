@@ -39,7 +39,7 @@ const MEAL_TYPES = [
   { id: "dinner",    label: "Dinner",    icon: "🌙" },
 ];
 
-const GOALS = { cal: 2000, protein: 150, carbs: 200, fat: 65, fiber: 25 };
+const GOAL_DEFAULTS = { cal: 2000, protein: 150, carbs: 200, fat: 65, fiber: 25 };
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 function dateKey(d) { return d.toISOString().slice(0, 10); }
@@ -101,12 +101,22 @@ let state = {
   selectedFood: null,
   selectedMeal: defaultMealType(),
   view:         "today",
+  goals:        { ...GOAL_DEFAULTS },
 };
 
 // ── DOM REFS ──────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 
-const authScreen   = $("auth-screen");
+const authScreen        = $("auth-screen");
+const onboardingScreen  = $("onboarding-screen");
+const ogCal             = $("og-cal");
+const ogProtein         = $("og-protein");
+const ogCarbs           = $("og-carbs");
+const ogFat             = $("og-fat");
+const ogFiber           = $("og-fiber");
+const ogError           = $("og-error");
+const ogSave            = $("og-save");
+const btnGoals          = $("btn-goals");
 const authForm     = $("auth-form");
 const authTabs     = document.querySelectorAll(".auth-tab");
 const nameGroup    = $("name-group");
@@ -185,11 +195,11 @@ function setTotals(s) {
   if (calEl)     calEl.textContent     = fmt(s.cal);
   if (proteinEl) proteinEl.textContent = fmt(s.protein) + "g";
 
-  updateRing("ring-cal",     s.cal,     GOALS.cal);
-  updateRing("ring-protein", s.protein, GOALS.protein);
-  updateBar("bar-carbs", "val-carbs", s.carbs, GOALS.carbs, "g");
-  updateBar("bar-fat",   "val-fat",   s.fat,   GOALS.fat,   "g");
-  updateBar("bar-fiber", "val-fiber", s.fiber, GOALS.fiber, "g");
+  updateRing("ring-cal",     s.cal,     state.goals.cal);
+  updateRing("ring-protein", s.protein, state.goals.protein);
+  updateBar("bar-carbs", "val-carbs", s.carbs, state.goals.carbs, "g");
+  updateBar("bar-fat",   "val-fat",   s.fat,   state.goals.fat,   "g");
+  updateBar("bar-fiber", "val-fiber", s.fiber, state.goals.fiber, "g");
 }
 
 // ── PASSWORD TOGGLE ───────────────────────────────────────────────────────────
@@ -267,22 +277,117 @@ db.auth.onAuthStateChange((event, session) => {
   }
 
   if (event === "SIGNED_OUT") {
-    state.user = null;
-    state.data = {};
+    state.user  = null;
+    state.data  = {};
+    state.goals = { ...GOAL_DEFAULTS };
     appEl.classList.add("hidden");
+    onboardingScreen.classList.add("hidden");
     authScreen.classList.remove("hidden");
   }
 });
 
+// ── PROFILE & GOALS ───────────────────────────────────────────────────────────
+async function fetchProfile() {
+  const { data, error } = await db
+    .from("profiles")
+    .select("goal_cal, goal_protein, goal_carbs, goal_fat, goal_fiber, goals_set")
+    .eq("id", state.user.id)
+    .single();
+  if (error) { console.error("fetchProfile:", error); return null; }
+  return data;
+}
+
+function updateGoalLabels() {
+  const calLabel     = $("goal-label-cal");
+  const proteinLabel = $("goal-label-protein");
+  if (calLabel)     calLabel.textContent     = `/ ${state.goals.cal} goal`;
+  if (proteinLabel) proteinLabel.textContent = `/ ${state.goals.protein}g goal`;
+}
+
+function showOnboarding() {
+  const g = state.goals;
+  ogCal.value     = g.cal;
+  ogProtein.value = g.protein;
+  ogCarbs.value   = g.carbs;
+  ogFat.value     = g.fat;
+  ogFiber.value   = g.fiber;
+  ogError.textContent = "";
+  const isUpdate = !appEl.classList.contains("hidden");
+  ogSave.textContent = isUpdate ? "Update Goals" : "Save & Start Tracking";
+  onboardingScreen.classList.remove("hidden");
+}
+
+ogSave.addEventListener("click", async () => {
+  const cal     = parseInt(ogCal.value);
+  const protein = parseInt(ogProtein.value);
+  const carbs   = parseInt(ogCarbs.value);
+  const fat     = parseInt(ogFat.value);
+  const fiber   = parseInt(ogFiber.value);
+
+  if ([cal, protein, carbs, fat, fiber].some(v => !v || v <= 0)) {
+    ogError.textContent = "All goals must be greater than 0."; return;
+  }
+
+  ogSave.disabled = true;
+
+  try {
+    const { error } = await db
+      .from("profiles")
+      .update({
+        goal_cal: cal, goal_protein: protein, goal_carbs: carbs,
+        goal_fat: fat, goal_fiber: fiber, goals_set: true,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      })
+      .eq("id", state.user.id);
+
+    if (error) { ogError.textContent = "Failed to save. Please try again."; console.error(error); return; }
+
+    state.goals = { cal, protein, carbs, fat, fiber };
+    onboardingScreen.classList.add("hidden");
+    updateGoalLabels();
+
+    if (appEl.classList.contains("hidden")) {
+      // First-time setup — now launch the app
+      appEl.classList.remove("hidden");
+      await loadCustomFoods();
+      renderToday();
+      renderFoodCatalog();
+    } else {
+      // Updating existing goals — re-render today's totals with new goals
+      const dateStr = dateKey(state.currentDate);
+      setTotals(sumLog(state.data[dateStr] || []));
+    }
+  } finally {
+    ogSave.disabled = false;
+  }
+});
+
+btnGoals.addEventListener("click", showOnboarding);
+
 async function startApp() {
   authScreen.classList.add("hidden");
-  appEl.classList.remove("hidden");
   state.data        = {};
   state.currentDate = new Date();
   greeting.textContent = `Hi, ${state.user.name}`;
-  await loadCustomFoods();
-  renderToday();
-  renderFoodCatalog();
+
+  const profile = await fetchProfile();
+  if (profile && profile.goals_set) {
+    state.goals = {
+      cal:     profile.goal_cal,
+      protein: profile.goal_protein,
+      carbs:   profile.goal_carbs,
+      fat:     profile.goal_fat,
+      fiber:   profile.goal_fiber,
+    };
+    appEl.classList.remove("hidden");
+    updateGoalLabels();
+    await loadCustomFoods();
+    renderToday();
+    renderFoodCatalog();
+  } else {
+    // New user or goals not yet set — show onboarding first
+    showOnboarding();
+  }
 }
 
 btnLogout.addEventListener("click", async () => {
